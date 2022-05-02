@@ -211,15 +211,11 @@ To prevent this, we can add a "critical section," which will prevent the interru
 
 Critical Sections can be used to prevent an ISR from running during a very tiny "atomic" portion of your code. In general, try to avoid critical sections as they introduce interrupt latency. If you do use a critical section, ensure it is as tiny as possible.
 
-### Semaphores
+### Producer/Consumer
 
 The interrupt example above fits the classic "producer/consumer" model - where one task, the ISR, produces data and another task, the main program, is the consumer of the data.
 
 Producer/consumer models are the perfect model for demonstrating all of these "shared resource" concepts because you generally have one or many producers queuing data in some way, and one or several consumers dequeuing that data and using it.
-
-Counting Semaphores are typically used for signaling between two threads that an event is ready to run. A task or thread that "pends" or "waits" for the semaphore will be paused by the OS, consuming no CPU.
-
-#### Producer/Consumer
 
 ```plantuml
 @startuml
@@ -232,10 +228,48 @@ buffer  -> consumer
 @enduml
 ```
 
+There may also be multiple producers and one consumer.
+
+```plantuml
+@startuml
+allowmixing
+object producer1
+object producer2
+object consumer
+database buffer
+producer1 -> buffer
+producer2 --> buffer
+buffer  -> consumer
+@enduml
+```
+
+There may also be multiple producers and multiple consumers.
+
+```plantuml
+@startuml
+allowmixing
+object producer1
+object producer2
+object consumer1
+object consumer2
+database buffer
+producer1 -> buffer
+producer2 --> buffer
+buffer  -> consumer1
+buffer --> consumer2
+@enduml
+```
+
+You get the point...
+
+### Semaphores
+
+Counting Semaphores are typically used for signaling between two threads that an event is ready to run. A task or thread that "pends" or "waits" for the semaphore will be paused by the OS, consuming no CPU.
+
 https://en.cppreference.com/w/cpp/thread/counting_semaphore
 https://en.cppreference.com/w/cpp/container/queue
 
-We'll start by adding a semaphore to the previous embedded program to prevent 100% CPU usage. We'll also use a std::queue as a FIFO so multiple bytes can be queued in the ISR.
+We'll start by adding a semaphore to the previous embedded program to prevent 100% CPU usage. We'll also use a **circular buffer** as a FIFO so multiple bytes can be queued in the ISR.
 
 ```cpp
 
@@ -245,8 +279,8 @@ std::counting_semaphore _rxflag{0};
 
 // Interrupt service routine, triggered by UART0 hardware receiving a byte.
 static void uart0_isr(){
-    _rxBuf.push_back(*UART0_RX_PTR);    // Push the new item onto the queue
-    _rxflag.release();             // Indicate to main program that it can run
+    _rxFifo.push_back(*UART0_RX_PTR);   // Push the new item onto the queue
+    _rxflag.release();                  // Release uart_task!
 }
 
 ```
@@ -264,10 +298,11 @@ int uart_task(){
 
     while(true){
 
-        // Puts the process to sleep until there is something to process
+        // ** Puts the process to sleep until there is something to process**
         _rxflag.acquire();
+        // We only get here if _rxFlag has been signaled!
 
-        // If a character is received, add it to rxbuf and print if a full string is received.
+        // Fetch character and add to rxbuf
         const char c = _rxFifo.pop_front();
         rxbuf[rxidx++] = c;
 
@@ -286,7 +321,7 @@ Look at the code above. How do we know that there will always be a character to 
         rxbuf[rxidx++] = c;
 ```
 
-**Answer** Because the std::counting_semaphore has hooks to the OS in it that guarantee that the task calling acquire() will only run if the counting_semaphore has a value > 0.
+**Answer** Because the std::counting_semaphore has hooks to the OS in it that guarantee that the task calling acquire() will only run if the counting_semaphore has been released > 0 times.
 
 Using the counting semaphore means that our task now only runs if there is data in the queue to process.
 
@@ -294,14 +329,14 @@ Using the counting semaphore means that our task now only runs if there is data 
 @startuml
 concise "UART0 Hardware" as uart
 robust "Interrupt" as int
-robust "task" as task
+robust "uart_task" as task
 int has run,wait
 task has run,sleep
 @0
 uart is receiving
 int is wait
 task is run
-@100
+@50
 task->task:acquire()
 int is wait
 task is sleep
@@ -334,3 +369,5 @@ task->task:acquire()
 
 @enduml
 ```
+
+During "sleep" above, uart_task will enter a sleeping state in the OS, allowing other tasks to run. If there are no other tasks to run, an embedded system will enter a low-power "idle" state, waiting for the next event to wake up a task.
