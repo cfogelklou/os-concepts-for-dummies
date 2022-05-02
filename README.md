@@ -26,13 +26,13 @@ In single-threaded programs, all resources can only be accessed or modified by t
 
 ### Multi Threaded
 
-Regardless of processor architecture, multi-threaded programs can have multiple "threads" of a program running "simultaneously."
+Regardless of processor architecture, multi-threaded programs can have multiple "threads" of a program running "simultaneously." Even if the CPU is only running one thread at a time, each thread can be interrupted and another thread resumed at any point, so the big picture is that all threads are executing simultanously (aka concurrently). Of course, on a multiple-core or hyper-threaded architecture, the threads are **literally** concurrent.
 
 ### Interrupts
 
 For the sake of visualization, we will use an embedded RTOS example.
 
-In this first example, a simple receiver program where a single byte is received from the interrupt routine.
+In this first example, a simple receiver program where a single byte is received from the interrupt routine, which is triggered by a UART (AKA Serial Port) peripheral.
 
 Note, this code is not secure. Let's ignore buffer and stack overflows for now.
 
@@ -40,13 +40,11 @@ Note, this code is not secure. Let's ignore buffer and stack overflows for now.
 
 The program below is a very simple example to introduce the concept of an ISR.
 
-The volatile flags below tell the compiler that these variables can be changed outside of the main application, like from an internet service routine, so the compiler will never use cached values.
-
 ```cpp
 
 // Shared with the interrupt service routine
-volatile char _rxchar = 0;
-volatile bool _rxflag = false;
+char _rxchar = 0;
+bool _rxflag = false;
 
 ```
 
@@ -54,7 +52,7 @@ Below, a typical "embedded" way to map hardware into C++ code - by pointers to h
 
 ```cpp
 // Hardware address of the serial port
-#define UART0_RX_PTR ((char *)0x55448822)
+#define UART0_RX_PTR ((volatile char *)0x55448822)
 
 ```
 
@@ -89,10 +87,9 @@ int main(int argc, char *argv[]){
         // If a character is received, add it to rxbuf and print if a full string is received.
         if (_rxflag){
             _rxflag = 0;
-            const char c = _rxchar;
-            rxbuf[rxidx++] = c;
+            rxbuf[rxidx++] = _rxchar;
 
-            if ('\0' == c){
+            if ('\0' == _rxchar){
                 std::cout << "Received " << rxbuf << " from UART." << std::endl;
                 rxidx = 0;
             }
@@ -152,7 +149,7 @@ main is run
 
 ##### Race Condition
 
-It is important to note tht we have already introduced a race condition into this tiny program.
+It is important to note that we have already introduced a race condition into this tiny program.
 
 Have you found it?
 
@@ -168,7 +165,7 @@ static void uart0_isr(){
 
 ```
 
-In main(), what happens if another interrupt occurs from the UART after \_rxflag is cleared but before \_rxchar is read?
+What happens if another interrupt occurs from the UART after \_rxflag is cleared but before \_rxchar is read?
 
 ```cpp
         if (_rxflag){
@@ -178,13 +175,13 @@ In main(), what happens if another interrupt occurs from the UART after \_rxflag
             // _rxchar = *UART0_RX_PTR;    // This read also triggers the UART to clear it's pending flag
             // _rxflag = true;             // Indicate to main program that it can run
 
-            const char c = _rxchar;
+            rxbuf[rxidx++] = _rxchar;
 
             // ...
         }
 ```
 
-Answer: We will lose a character.
+**Answer**: We will lose a character, because the ISR will have overwritten \_rxchar before main() had a chance to fetch the previous character.
 
 To prevent this, we can add a "critical section," which will prevent the interrupt from running during a very tiny portion of code. Critical sections should be very small and quick, because they introduce interrupt latency. Interrupt latency is the time between when the hardware interrupt is triggered, and the time when the ISR starts running.
 
@@ -194,9 +191,8 @@ To prevent this, we can add a "critical section," which will prevent the interru
         // The interrupt cannot trigger between the Enter() and Exit() calls.
         if (_rxflag){
             _rxflag = 0;
-            const char c = _rxchar;
-            rxbuf[rxidx++] = c;
-            gotNull = ('\0' == c);
+            rxbuf[rxidx++] = _rxchar;
+            gotNull = ('\0' == _rxchar);
         }
         ExitCriticalSection();
 
@@ -209,7 +205,7 @@ To prevent this, we can add a "critical section," which will prevent the interru
 
 ##### Conclusion
 
-Critical Sections can be used to prevent an ISR from running during a very tiny "atomic" portion of your code. In general, try to avoid critical sections as they introduce interrupt latency. If you do use a critical section, ensure it is as tiny as possible.
+Critical Sections can be used to prevent an ISR from running during a very tiny "atomic" portion of your code. In general, try to avoid critical sections as they introduce interrupt latency. If you do use a critical section, ensure it is as tiny and fast as possible.
 
 ### Producer/Consumer
 
@@ -285,7 +281,7 @@ static void uart0_isr(){
 
 ```
 
-The main program thread now sleeps until there is something to process, running continuously and checking the \_rxflag variable.
+The uart_task thread now sleeps until there is something to process, no longer consuming 100% CPU
 
 ```cpp
 int uart_task(){
@@ -298,7 +294,7 @@ int uart_task(){
 
     while(true){
 
-        // ** Puts the process to sleep until there is something to process**
+        // ** Puts the task to sleep until there is something to process**
         _rxflag.acquire();
         // We only get here if _rxFlag has been signaled!
 
