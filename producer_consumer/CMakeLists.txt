@@ -35,7 +35,7 @@ include_directories(
     ${ROOT_SRC}
 )
 
-add_executable(${PROJECT_NAME} ${SOURCE_FILES})
+add_executable(${PROJECT_NAME} ${SRC_FILES})
 
 find_package(Threads REQUIRED)
 
