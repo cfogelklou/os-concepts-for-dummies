@@ -18,11 +18,8 @@ void producer(std::deque<uint8_t>* pfifo8) {
     {
       std::lock_guard<std::mutex> guard(lock);
       pfifo8->push_back((loops >> 0) & 0x000000ff);
-      // std::this_thread::sleep_for(1ms);
       pfifo8->push_back((loops >> 8) & 0x000000ff);
-      // std::this_thread::sleep_for(1ms);
       pfifo8->push_back((loops >> 16) & 0x000000ff);
-      // std::this_thread::sleep_for(1ms);
       pfifo8->push_back((loops >> 24) & 0x000000ff);
       loops++;
     }
