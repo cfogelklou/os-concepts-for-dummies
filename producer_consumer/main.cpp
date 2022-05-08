@@ -45,7 +45,6 @@ void consumer(std::deque<uint8_t>* pfifo8) {
         pfifo8->pop_front();
         const int32_t x3 = pfifo8->front();
         pfifo8->pop_front();
-        // std::cout << "Consumed " << x << std::endl;
         const int32_t x = x0 | (x1 << 8) | (x2 << 16) | (x3 << 24);
         std::cout << "Got " << x << std::endl;
       }
