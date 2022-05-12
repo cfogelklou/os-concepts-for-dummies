@@ -72,6 +72,8 @@ int main() {
   // synchronize threads:
   first.join(); // pauses until first finishes
   second.join();
+
+  std::cout << "Ran for 20 seconds without crashing. Yay!!!" << std::endl;
   
   return 0;
 }
