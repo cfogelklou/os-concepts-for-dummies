@@ -5,20 +5,29 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <semaphore>
 
 using namespace std::chrono_literals;
 
 static volatile auto running = true;
 
+// Mutex for protecting the fifo
+std::mutex lock;
+
+// Create a counting semaphore with max value of 10, default of 0
+std::counting_semaphore<10> sem(0);
 
 void producer(std::deque<uint8_t>* pfifo8) {
   // produce stuff...
   int32_t loops = 0;
   while (running) {
+    lock.lock();
     pfifo8->push_back((loops >> 0) & 0x000000ff);
     pfifo8->push_back((loops >> 8) & 0x000000ff);
     pfifo8->push_back((loops >> 16) & 0x000000ff);
     pfifo8->push_back((loops >> 24) & 0x000000ff);
+    lock.unlock();
+    sem.release();
     loops++;
     std::this_thread::sleep_for(10ms);
   }
@@ -29,6 +38,8 @@ void consumer(std::deque<uint8_t>* pfifo8) {
   std::cout << "Hello from consumer" << std::endl;
   while (running) {
     int32_t x = 0;
+    sem.acquire();
+    lock.lock();
     if (!pfifo8->empty()) {
       const int32_t x0 = pfifo8->front();
       pfifo8->pop_front();
@@ -40,6 +51,7 @@ void consumer(std::deque<uint8_t>* pfifo8) {
       pfifo8->pop_front();
       x = x0 | (x1 << 8) | (x2 << 16) | (x3 << 24);
     }
+    lock.unlock();
     if (x != 0) {
       std::cout << "Got " << x << std::endl;
     }
