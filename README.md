@@ -28,6 +28,10 @@ In single-threaded programs, all resources can only be accessed or modified by t
 
 Regardless of processor architecture, multi-threaded programs can have multiple "threads" of a program running "simultaneously." Even if the CPU is only running one thread at a time, each thread can be interrupted and another thread resumed at any point, so the big picture is that all threads are executing simultanously (aka concurrently). Of course, on a multiple-core or hyper-threaded architecture, the threads are **literally** concurrent.
 
+### Atomic Operations
+
+Atomic operations are operations that can be executed without being interrupted. Typically, these can execute in a single CPU instruction. You must consider whether or not an instruction is atomic when working with any shared resource.
+
 ### Interrupts
 
 For the sake of visualization, we will use an embedded RTOS example.
@@ -108,7 +112,7 @@ robust "main" as main
 int has run,wait
 main has run,wait
 @0
-uart is receiving
+uart is {-}
 int is wait
 main is run
 @200
@@ -117,7 +121,7 @@ uart->int:'h'
 int is run
 main is wait
 @250
-uart is receiving
+uart is {-}
 int->uart:read
 int->main:'h'
 int is wait
@@ -128,7 +132,7 @@ uart->int:'i'
 int is run
 main is wait
 @450
-uart is receiving
+uart is {-}
 int->uart:read
 int->main:'i'
 int is wait
@@ -139,7 +143,7 @@ uart->int:'\0'
 int is run
 main is wait
 @650
-uart is receiving
+uart is {-}
 int->uart:read
 int->main:'\0'
 int is wait
@@ -194,7 +198,7 @@ To prevent this, we can add a "critical section," which will prevent the interru
             rxbuf[rxidx++] = _rxchar;
             gotNull = ('\0' == _rxchar);
         }
-        ExitCriticalSection();
+        LeaveCriticalSection();
 
         // Now the interrupt can run again.  gotNull can be set by our critical section area.
         if (gotNull){
@@ -206,6 +210,106 @@ To prevent this, we can add a "critical section," which will prevent the interru
 ##### Conclusion
 
 Critical Sections can be used to prevent an ISR from running during a very tiny "atomic" portion of your code. In general, try to avoid critical sections as they introduce interrupt latency. If you do use a critical section, ensure it is as tiny and fast as possible.
+
+##### Atomic Example
+
+Even something as simple as x++ is not atomic
+
+```cpp
+    // Counts how many times any of the threads has run a loop
+    int shared_thread_loops = 0;
+
+    void increment_thread_1(){
+        while(true){
+            // Do stuff in thread 1
+            shared_thread_loops++;
+        }
+    }
+
+    void increment_thread_2(){
+        while(true){
+            // Do stuff in thread 2
+            shared_thread_loops++;
+        }
+    }
+
+```
+
+Can be interrupted, resulting in the wrong value in shared_thread_loops. 
+
+The shared_thread_loops++ instruction, in machine code, translates to the following assembly pseudocode
+
+```cpp
+  reg = readmem(&shared_thread_loops);    // Read memory to register
+  add(reg, 1);                            // Increment register
+  writemem(reg, &shared_thread_loops);    // Write memory back to register
+```
+
+So, if both threads are running and one interrupts the other while the increment is taking place...
+
+```cpp
+  // increment_thread_1                     increment_thread_2
+
+  //                shared_thread_loops == 7
+
+  reg1 = readmem(&shared_thread_loops);     // Read memory to register
+  // reg1 == 7
+```
+
+Increment_thread_2 starts running here...
+
+```cpp
+
+                                            // Thread 2
+                                            reg2 = readmem(&shared_thread_loops);     // Read memory to register  
+                                            // reg2 == 7!
+                                            add(reg2, 1);                            // Increment register
+                                            // reg2 == 8!
+                                            writemem(reg2, &shared_thread_loops);    // Write memory back to register
+  //                shared_thread_loops == 8
+
+```
+
+Now increment_thread_1 continues running
+
+```cpp
+
+  // reg1 == 7!
+  add(reg1, 1);                            // Increment register
+  // reg1 == 8!
+  writemem(reg2, &shared_thread_loops);    // Write memory back to register
+  //                shared_thread_loops == 8
+
+```
+
+Despite executing twice in two different threads, shared_thread_loops only incremented once. x++ is not atomic and therefore we need to protect it.
+
+Let's fix this with a critical section.
+
+```cpp
+    // Counts how many times any of the threads has run a loop
+    int shared_thread_loops = 0;
+
+    void increment_thread_1(){
+        while(true){
+            // Do stuff in thread 1
+            EnterCriticalSection(); // Atomic operations between enter() and leave()
+            shared_thread_loops++;
+            LeaveCriticalSection();
+        }
+    }
+
+    void increment_thread_2(){
+        while(true){
+            // Do stuff in thread 2
+            EnterCriticalSection(); // Atomic operations between enter() and leave()
+            shared_thread_loops++;
+            LeaveCriticalSection();
+        }
+    }
+
+```
+
 
 ### Producer/Consumer
 
@@ -329,7 +433,7 @@ robust "uart_task" as task
 int has run,wait
 task has run,sleep
 @0
-uart is receiving
+uart is {-}
 int is wait
 task is run
 @50
@@ -341,7 +445,7 @@ uart->int
 uart is pending
 int is run
 @250
-uart is receiving
+uart is {-}
 uart->int:'h'
 int->task:release()
 int is wait
@@ -354,7 +458,7 @@ uart->int
 uart is pending
 int is run
 @450
-uart is receiving
+uart is {-}
 uart->int:'i'
 int->task:release()
 int is wait
