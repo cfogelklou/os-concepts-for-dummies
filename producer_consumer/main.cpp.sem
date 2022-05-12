@@ -6,10 +6,6 @@
 #include <string>
 #include <thread>
 #include <semaphore>
-#ifdef WIN32
-#include <Windows.h>
-#endif
-
 
 using namespace std::chrono_literals;
 
