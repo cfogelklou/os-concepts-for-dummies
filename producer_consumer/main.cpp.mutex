@@ -13,6 +13,7 @@
 using namespace std::chrono_literals;
 
 static volatile auto running = true;
+// Mutex for protecting the fifo
 std::mutex lock;
 
 void producer(std::deque<uint8_t>* pfifo8) {
