@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.5)
 project(producer_consumer)
 enable_testing()
 
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 20)
 
 set(ROOT_SRC ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 
