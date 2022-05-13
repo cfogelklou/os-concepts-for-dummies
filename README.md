@@ -49,8 +49,8 @@ The program below is a very simple example to introduce the concept of an ISR.
 ```cpp
 
 // Shared with the interrupt service routine
-char _rxchar = 0;
-bool _rxflag = false;
+volatile char _rxchar = 0;
+volatile bool _rxflag = false;
 
 ```
 
@@ -62,7 +62,7 @@ Below, a typical "embedded" way to map hardware into C++ code - by pointers to h
 
 ```
 
-An extremely simple Interrupt Service Routine might simply read the hardware register (which clears the ISR pending flag in the UART) and move it to another location.
+A peripheral like a UART (AKA serial port) will trigger an interrupt when a byte arrives at the UART hardware. Interrupts will _interrupt_ whatever code is currently running and jump to an interrupt service routine. An extremely simple Interrupt Service Routine might simply read the hardware register (which clears the ISR pending flag in the UART) and move it to another location. Reading the hardware will clear the "pending" flag and allow the CPU to return to executing the interrupted code.
 
 ```cpp
 
@@ -104,7 +104,7 @@ int main(int argc, char *argv[]){
 }
 ```
 
-The interrupt and the main program are running "simultaneously" in the RTOS. How? The RTOS will automatically switch to the ISR when the UART triggers an interrupt. This will run the ISR to handle the hardware interrupt, and switch immediately to back the main program.
+The interrupt and the main program are running "simultaneously" in the CPU. You can never guess where the main program will be interrupted; \_rxflag can change at any time. However, the ISR's execution will be **atomic** from the point of view of the main program - if \_rxflag is set, then \_rxchar will also have been set.
 
 ```plantuml
 @startuml
@@ -237,7 +237,7 @@ Even something as simple as x++ is not atomic
 
 ```
 
-Can be interrupted, resulting in the wrong value in shared_thread_loops. 
+Can be interrupted, resulting in the wrong value in shared_thread_loops.
 
 The shared_thread_loops++ instruction, in machine code, translates to the following assembly pseudocode
 
@@ -263,7 +263,7 @@ Increment_thread_2 starts running here...
 ```cpp
 
                                             // Thread 2
-                                            reg2 = readmem(&shared_thread_loops);     // Read memory to register  
+                                            reg2 = readmem(&shared_thread_loops);     // Read memory to register
                                             // reg2 == 7!
                                             add(reg2, 1);                            // Increment register
                                             // reg2 == 8!
@@ -284,7 +284,7 @@ Now increment_thread_1 continues running
 
 ```
 
-Despite executing twice in two different threads, shared_thread_loops only incremented once. x++ is not atomic and therefore we need to protect it.
+Despite executing twice in two different threads, shared_thread_loops only increments once. **shared_thread_loops++** is not atomic and therefore we need to protect it.
 
 Let's fix this with a critical section.
 
@@ -307,11 +307,15 @@ Let's fix this with a critical section.
             EnterCriticalSection(); // Atomic operations between enter() and leave()
             shared_thread_loops++;
             LeaveCriticalSection();
+            // Any pending interrupts & task switches will occur here.
         }
     }
 
 ```
 
+Now both shared_thread_loops accesses are protected.
+
+In an embedded processor, Critical sections prevent interrupts from occuring fo the whole CPU, which also prevents task switching. It can cause all kinds of hardware latency, so is not recommended for most purposes. Instead, we can use a mutex... We'll get there.
 
 ### Producer/Consumer
 
@@ -363,6 +367,44 @@ buffer --> consumer2
 ```
 
 You get the point...
+
+#### Mutex
+
+When you have multiple threads wanting access to the same resource, use a mutex instead of a critical section. Mutex stands for Mutual Exclusion, and you can use a mutex for each shared resource you need to protect. It is a special resource in all Operating Systems which will only allow a single thread to "own" the mutex at a time. Each thread will first lock the mutex, access the resource, then unlock the mutex.
+
+Lets revamp the above example with a mutex.
+
+```cpp
+
+    // Mutex for protecting the fifo
+    std::mutex lock;
+    // Counts how many times any of the threads has run a loop
+    int shared_thread_loops = 0;
+
+    void increment_thread_1(){
+        while(true){
+            // Do stuff in thread 1
+            lock.lock(); // Atomic operations between enter() and leave()
+            shared_thread_loops++;
+            lock.unlock();
+        }
+    }
+
+    void increment_thread_2(){
+        while(true){
+            // Do stuff in thread 2
+            lock.lock(); // Atomic operations between enter() and leave()
+            shared_thread_loops++;
+            lock.unlock();
+            // Any pending interrupts & task switches will occur here.
+        }
+    }
+
+```
+
+#### Deadlocks
+
+Beware the dreaded deadlock... If threads need to lock multiple mutexes to get access to a resource, each thread might end up owning one of them and waiting for the other one, which will hang both threads forever.
 
 ### Semaphores
 
