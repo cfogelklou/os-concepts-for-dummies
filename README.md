@@ -1,3 +1,5 @@
+[![CI](https://github.com/cfogelklou/os-concepts-for-dummies/actions/workflows/devel.yml/badge.svg)](https://github.com/cfogelklou/os-concepts-for-dummies/actions/workflows/devel.yml)
+
 # OS Concepts for Dummies
 
 A repository and markdown document to help give a rundown on basic OS concepts that some developers (self taught programmers, web developers, etc.) haven't seen before.
