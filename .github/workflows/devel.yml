@@ -1,0 +1,63 @@
+name: CI
+# To test fastlane build commands on your local machine, install fastlane.
+# sudo gem install fastlane -NV
+
+on:
+  push:
+    # Sequence of patterns matched against refs/heads
+    branches:
+      - devel
+      - master
+
+  pull_request:
+    types:
+      - labeled
+      - unlabeled
+      - synchronize
+      - opened
+      - edited
+      - ready_for_review
+      - unlocked
+
+  # Manual trigger.
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    name: Build and test application
+    needs: []
+    strategy:
+      matrix:
+        platform: [ubuntu-latest] # , ubuntu-latest
+    runs-on: ${{ matrix.platform }}
+    env:
+      RUN_NUMBER: ${{github.run_number}}
+      GITHUB_WORKFLOW: ${{github.workflow}}
+      GITHUB_REF: ${{github.ref}}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+        with:
+          submodules: "true"
+
+      - name: Create build dir, makefiles
+        working-directory: producer_consumer
+        run: |
+          mkdir -p build && cd build
+          cmake ..
+
+      - name: Run without any synchronization - will fail.
+        working-directory: producer_consumer/build
+        run: |
+          make -j4
+          set +e
+          ./producer_consumer
+          set -e
+
+      - name: Run with mutex and semaphore.
+        working-directory: producer_consumer/build
+        run: |
+          rm main.cpp
+          mv main.cpp.sem main.cpp
+          make -j4
+          ./producer_consumer
