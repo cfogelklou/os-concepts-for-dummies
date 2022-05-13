@@ -54,10 +54,10 @@ jobs:
           ./producer_consumer
           set -e
 
-      - name: Run with mutex and semaphore.
+      - name: Run with mutex.
         working-directory: producer_consumer/build
         run: |
           rm ../main.cpp
-          mv ../main.cpp.sem ../main.cpp
+          mv ../main.cpp.mutex ../main.cpp
           make clean && make -j4
           ./producer_consumer
