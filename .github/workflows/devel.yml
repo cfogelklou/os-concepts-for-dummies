@@ -57,7 +57,7 @@ jobs:
       - name: Run with mutex and semaphore.
         working-directory: producer_consumer/build
         run: |
-          rm main.cpp
-          mv main.cpp.sem main.cpp
+          rm ../main.cpp
+          mv ../main.cpp.sem ../main.cpp
           make -j4
           ./producer_consumer
